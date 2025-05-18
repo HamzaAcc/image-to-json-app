@@ -10,8 +10,8 @@ st.title("📷 ➜ 🧠 ➜ 🌐 Image to Elementor JSON")
 st.write("Upload a screenshot of a website. We'll OCR the text and generate Elementor-compatible JSON.")
 
 # Load secrets
-OCR_KEY = st.secrets["OCR_SPACE_API_KEY"]
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+OCR_KEY = st.secrets["K85301890588957"]
+openai.api_key = st.secrets["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"]
 
 def run_ocr_space(image_bytes):
     payload = {
