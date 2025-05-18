@@ -1,76 +1,75 @@
 import streamlit as st
 import requests
-import openai
-import json
 from PIL import Image, UnidentifiedImageError
+import json
+import base64
+import io
 
-st.set_page_config(page_title="Image to Elementor JSON", layout="centered")
+st.set_page_config(page_title="🧠 Image to Elementor JSON", layout="centered")
 
-st.title("📷 ➜ 🧠 ➜ 🌐 Image to Elementor JSON")
-st.write("Upload a screenshot of a website. We'll OCR the text and generate Elementor-compatible JSON.")
+st.title("🧠 Image to Elementor JSON Generator")
+st.write("Upload a screenshot of a website layout to generate Elementor-compatible JSON.")
 
-# Load secrets
-OCR_KEY = st.secrets["K85301890588957"]
-openai.api_key = st.secrets["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"]
+# Load API key from Streamlit secrets
+OCR_KEY = st.secrets["OCR_SPACE_API_KEY"]
 
-def run_ocr_space(image_bytes):
-    payload = {
-        'apikey': OCR_KEY,
-        'language': 'eng',
-        'isOverlayRequired': False,
-    }
-    files = {'file': image_bytes}
-    response = requests.post('https://api.ocr.space/parse/image', data=payload, files=files)
-    return response.json()
-
-def generate_elementor_json(ocr_text):
-    prompt = f"""
-You are a web design assistant. Given this website text:
-
-\"\"\"{ocr_text}\"\"\"
-
-Generate a basic Elementor JSON layout compatible with WordPress. Use heading, paragraph, and button widgets appropriately. Only output clean JSON.
-"""
-
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": "You are an expert in Elementor and WordPress JSON layouts."},
-            {"role": "user", "content": prompt}
-        ]
-    )
-
-    return response['choices'][0]['message']['content']
-
-uploaded_file = st.file_uploader("📤 Upload website screenshot", type=["png", "jpg", "jpeg", "bmp"])
+uploaded_file = st.file_uploader("📤 Choose an image", type=["png", "jpg", "jpeg", "bmp"])
 
 if uploaded_file:
     try:
         image = Image.open(uploaded_file)
-        st.image(image, caption="Uploaded Image", use_container_width=True)
+        st.image(image, caption="📷 Uploaded Image", use_container_width=True)
     except UnidentifiedImageError:
-        st.error("Invalid image format.")
+        st.error("❌ Invalid image format.")
         st.stop()
 
-    if st.button("🧠 Scan & Build Elementor JSON"):
-        with st.spinner("Running OCR..."):
-            ocr_result = run_ocr_space(uploaded_file.getvalue())
-            parsed = ocr_result.get("ParsedResults", [])
-            if not parsed:
-                st.error("OCR failed or returned no results.")
+    if st.button("🔍 Scan and Generate JSON"):
+        with st.spinner("Sending image to OCR.space..."):
+            buffered = io.BytesIO()
+            image.save(buffered, format="PNG")
+            img_base64 = base64.b64encode(buffered.getvalue()).decode()
+
+            url = "https://api.ocr.space/parse/image"
+            headers = {'apikey': OCR_KEY}
+            payload = {
+                'base64Image': f'data:image/png;base64,{img_base64}',
+                'language': 'eng',
+                'OCREngine': '2'
+            }
+
+            response = requests.post(url, data=payload, headers=headers)
+            result = response.json()
+
+            try:
+                parsed_text = result['ParsedResults'][0]['ParsedText']
+            except (KeyError, IndexError):
+                st.error("❌ OCR failed or no text found.")
                 st.stop()
-            ocr_text = parsed[0].get("ParsedText", "")
-            st.subheader("📄 Extracted Text")
-            st.text_area("OCR Result", ocr_text, height=200)
 
-        with st.spinner("Generating Elementor JSON..."):
-            elementor_json = generate_elementor_json(ocr_text)
-            st.subheader("🌐 Elementor Layout (JSON)")
-            st.code(elementor_json, language="json")
+        st.success("✅ OCR Completed!")
+        st.text_area("📝 Extracted Text", parsed_text, height=200)
 
-            st.download_button(
-                label="📥 Download Elementor JSON",
-                data=elementor_json,
-                file_name="elementor_layout.json",
-                mime="application/json"
-            )
+        # Simple conversion to Elementor section (basic)
+        elementor_json = {
+            "version": "1.0",
+            "title": uploaded_file.name,
+            "content": [
+                {
+                    "type": "section",
+                    "elements": [
+                        {
+                            "type": "widget",
+                            "widgetType": "text-editor",
+                            "settings": {
+                                "editor": parsed_text
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+
+        json_str = json.dumps(elementor_json, indent=2)
+        st.download_button("📥 Download Elementor JSON", data=json_str,
+                           file_name="elementor_layout.json", mime="application/json")
+        st.code(json_str, language="json")
